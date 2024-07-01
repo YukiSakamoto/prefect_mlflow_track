@@ -6,21 +6,21 @@ import datetime
 import functools
 import inspect
 
-def task_wrapper(f):
-    @functools.wraps(f)
-    @task
-    def wrapper(*args, **kwargs):
-        mlflow_server_uri = kwargs.pop("mlflow_server_uri")
-        exp_id = kwargs.pop("experiment_id")
-        run_id = kwargs.pop("run_id")
-        experiment_url = f"http://{mlflow_server_uri}/#/experiments/{experiment_id}/runs/{run_id}"
-        create_link_artifact(key = "link", link = experiment_url)
-        ret = f(*args, **kwargs) 
-        return ret
-    return wrapper
+def task_with_mlflow(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None):
+    def prefect_task_wrapper(mlflow_server_uri, exp_id, run_id):
+        def prefect_task_wrapper2(f):
+            @task
+            @functools.wraps(f)
+            def wrapper(*args, **kwargs):
+                experiment_url = f"http://{mlflow_server_uri}/#/experiments/{exp_id}/runs/{run_id}"
+                description = "{} exp_id: {} run_id: {}".format(f.__name__, exp_id, run_id)
+                create_link_artifact(key = "mlflow", link = experiment_url, description = description)
+                ret = f(*args, **kwargs) 
+                return ret
+            return wrapper
+        return prefect_task_wrapper2
 
-def my_logger(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None):
-    def my_logger_wrapper(f):
+    def task_with_mlflow_wrapper(f):
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
             #----------------------------------------
@@ -31,8 +31,6 @@ def my_logger(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None):
             param_names = [param.name for param in signature.parameters.values()]
             bound_args = signature.bind(*args, **kwargs)
             bound_args.apply_defaults()
-
-            decorate_func = task(f)
             #----------------------------------------
             # Set up MLFlow
             #----------------------------------------
@@ -48,15 +46,14 @@ def my_logger(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None):
                 #----------------------------------------
                 # Execution
                 #----------------------------------------
-                #decorate_func = task_wrapper(f, mlflow_server_uri = mlflow_server_uri, exp_id = experiment_id, run_id = run_id)
+                decorate_func = prefect_task_wrapper(mlflow_server_uri = mlflow_server_uri, exp_id = experiment_id, run_id = run_id)(f)
                 ret_value = decorate_func(*args, **kwargs)
                 #----------------------------------------
                 # Prefect: Save the log 
                 #----------------------------------------
                 experiment_url = f"http://{mlflow_server_uri}/#/experiments/{experiment_id}/runs/{run_id}"
                 logger = get_run_logger()
-                logger.info(f"MLflow Experiment URL: {experiment_url}")
-                create_link_artifact(key = "function-link", link = experiment_url, description = "{} exp_id: {} run_id: {}".format(function_name, experiment_id, run_id))
+                logger.info(f"{function_name}: {experiment_url}")
                 #----------------------------------------
                 # MLFlow: save all artifact
                 #----------------------------------------
@@ -71,16 +68,16 @@ def my_logger(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None):
                     mlflow.log_metric(function_name, ret_value)
             return ret_value 
         return _wrapper
-    return my_logger_wrapper
+    return task_with_mlflow_wrapper
 
-def for_link(f):
-    @functools.wrapper(f)
-    def wrapper(*args, **kwargs):
-        info = kwargs.pop("info")
-        link = f"fuga//{info.run_id}"
-        create_link_artifact(link)
-        return f(*args, **kwargs)
-    return wrapper
+#def for_link(f):
+#    @functools.wrapper(f)
+#    def wrapper(*args, **kwargs):
+#        info = kwargs.pop("info")
+#        link = f"fuga//{info.run_id}"
+#        create_link_artifact(link)
+#        return f(*args, **kwargs)
+#    return wrapper
 #
 #@mlflow(artifacts_dir)
 #@for_link
@@ -89,21 +86,21 @@ def for_link(f):
 #str_twice(s, link="fuga")
 
 
-@my_logger(artifact_dir = "./hoge")
+@task_with_mlflow(artifact_dir = "./hoge")
 def str_twice(s):
     return s*2
 
 
-@my_logger()
+@task_with_mlflow()
 def str_triple(s):
     return s*3
 
-@my_logger()
+@task_with_mlflow()
 def str_add(s1, s2):
-    create_link_artifact(link = "www.google.com", key = "yahoo", description = "yahoo description")
+    #create_link_artifact(link = "www.google.com", key = "yahoo", description = "yahoo description")
     return s1+s2
 
-@my_logger()
+@task_with_mlflow()
 def str_and(s1,s2):
     return s1 and s2
 
