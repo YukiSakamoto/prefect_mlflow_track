@@ -6,9 +6,11 @@ import datetime
 import functools
 import inspect
 
-def task_with_mlflow(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None):
+def task_with_mlflow(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None, 
+        arg_name_artifact_dir_before_exec = None, arg_name_artifact_dir_after_exec = None):
     def prefect_task_wrapper(mlflow_server_uri, exp_id, run_id):
         def prefect_task_wrapper2(f):
+            # This wrapper function is for the logging of the mlflow url.
             @task
             @functools.wraps(f)
             def wrapper(*args, **kwargs):
@@ -43,6 +45,16 @@ def task_with_mlflow(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None)
                 #----------------------------------------
                 for name, value in bound_args.arguments.items():
                     mlflow.log_param(name, value)
+
+                if arg_name_artifact_dir_before_exec != None:
+                    #if not isinstance(arg_name_artifact_dir_before_exec, str):
+                    #    raise
+                    if arg_name_artifact_dir_before_exec in bound_args.arguments:
+                        artifact_dir = bound_args.arguments[arg_name_artifact_dir_before_exec]
+                        if artifact_dir != None:
+                            mlflow.log_artifacts(artifact_dir, artifact_path = "artifacts_before_exec")
+                            print("save1 done")
+
                 #----------------------------------------
                 # Execution
                 #----------------------------------------
@@ -57,8 +69,16 @@ def task_with_mlflow(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None)
                 #----------------------------------------
                 # MLFlow: save all artifact
                 #----------------------------------------
-                if artifact_dir != None:
-                    mlflow.log_artifacts(artifact_dir, artifact_path = "artifacts")
+                if arg_name_artifact_dir_after_exec != None:
+                    #if not isinstance(arg_name_artifact_dir_after_exec, str):
+                    #    raise
+                    if arg_name_artifact_dir_after_exec in bound_args.arguments:
+                        artifact_dir = bound_args.arguments[arg_name_artifact_dir_after_exec]
+                        if artifact_dir != None:
+                            mlflow.log_artifacts(artifact_dir, artifact_path = "artifacts_after_exec")
+                            print("save2 done")
+                #if artifact_dir != None:
+                #    mlflow.log_artifacts(artifact_dir, artifact_path = "artifacts")
                 task_desc = dict()
                 task_desc["inputs"] = bound_args.arguments
                 task_desc["output"] = ret_value
@@ -86,8 +106,8 @@ def task_with_mlflow(mlflow_server_uri = "10.5.1.218:8888", artifact_dir = None)
 #str_twice(s, link="fuga")
 
 
-@task_with_mlflow(artifact_dir = "./hoge")
-def str_twice(s):
+@task_with_mlflow(arg_name_artifact_dir_before_exec = "artifact_dir", arg_name_artifact_dir_after_exec = "artifact_dir")
+def str_twice(s, artifact_dir = None):
     return s*2
 
 
@@ -106,6 +126,7 @@ def str_and(s1,s2):
 
 @flow()
 def my_test(a = "hello", b = "byebye"):
+    a = str_twice(a, artifact_dir = "./hoge")
     aa = str_twice(a)
     bb = str_twice(b)
     ret = str_add(aa,bb)
